@@ -73,5 +73,12 @@
             android:name="vn.hunghd.flutterdownloader.NOTIFICATION_ICON"
             android:resource="@drawable/ic_stat_flutter" />
 
+        <receiver android:name="vn.hunghd.flutterdownloader.CancelBroadcastReceiver"  android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.INPUT_METHOD_CHANGED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 </manifest>

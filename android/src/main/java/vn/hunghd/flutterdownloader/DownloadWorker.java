@@ -25,6 +25,8 @@ import androidx.core.content.ContextCompat;
 import android.os.Environment;
 import android.os.Handler;
 import android.provider.MediaStore;
+import android.text.Spannable;
+import android.text.SpannableString;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -49,10 +51,13 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import androidx.core.graphics.drawable.IconCompat;
+import androidx.work.WorkManager;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
@@ -144,6 +149,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
 
     @Override
     public void onMethodCall(MethodCall call, @NonNull MethodChannel.Result result) {
+        Log.e(">>>>> onMethodCall", call.method);
         if (call.method.equals("didInitializeDispatcher")) {
             synchronized (isolateStarted) {
                 while (!isolateQueue.isEmpty()) {
@@ -159,6 +165,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
 
     @Override
     public void onStopped() {
+        Log.e(">>>>> onStopped", "onStopped");
         Context context = getApplicationContext();
         dbHelper = TaskDbHelper.getInstance(context);
         taskDao = new TaskDao(dbHelper);
@@ -168,7 +175,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
 
         DownloadTask task = taskDao.loadTask(getId().toString());
         if (task != null && task.status == DownloadStatus.ENQUEUED) {
-            updateNotification(context, filename == null ? url : filename, DownloadStatus.CANCELED, -1, null, true);
+            updateNotification(context, null, filename == null ? url : filename, DownloadStatus.CANCELED, -1, null, true);
             taskDao.updateTask(getId().toString(), DownloadStatus.CANCELED, lastProgress);
         }
     }
@@ -176,6 +183,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
     @NonNull
     @Override
     public Result doWork() {
+        Log.e(">>>>> doWork", "doWork");
         Context context = getApplicationContext();
         dbHelper = TaskDbHelper.getInstance(context);
         taskDao = new TaskDao(dbHelper);
@@ -214,7 +222,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
 
         setupNotification(context);
 
-        updateNotification(context, filename == null ? url : filename, DownloadStatus.RUNNING, task.progress, null, false);
+        updateNotification(context, task.taskId, filename == null ? url : filename, DownloadStatus.RUNNING, task.progress, null, false);
         taskDao.updateTask(getId().toString(), DownloadStatus.RUNNING, task.progress);
 
         //automatic resume for partial files. (if the workmanager unexpectedly quited in background)
@@ -232,7 +240,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
             taskDao = null;
             return Result.success();
         } catch (Exception e) {
-            updateNotification(context, filename == null ? url : filename, DownloadStatus.FAILED, -1, null, true);
+            updateNotification(context, null, filename == null ? url : filename, DownloadStatus.FAILED, -1, null, true);
             taskDao.updateTask(getId().toString(), DownloadStatus.FAILED, lastProgress);
             e.printStackTrace();
             dbHelper = null;
@@ -425,7 +433,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
                         // a new bunch of data fetched and a notification sent
                         taskDao.updateTask(getId().toString(), DownloadStatus.RUNNING, progress);
 
-                        updateNotification(context, filename, DownloadStatus.RUNNING, progress, null, false);
+                        updateNotification(context, getId().toString(), filename, DownloadStatus.RUNNING, progress, null, false);
                     }
                 }
 
@@ -455,19 +463,19 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
                     }
                 }
                 taskDao.updateTask(getId().toString(), status, progress);
-                updateNotification(context, filename, status, progress, pendingIntent, true);
+                updateNotification(context, null, filename, status, progress, pendingIntent, true);
 
                 log(isStopped() ? "Download canceled" : "File downloaded");
             } else {
                 DownloadTask task = taskDao.loadTask(getId().toString());
                 int status = isStopped() ? (task.resumable ? DownloadStatus.PAUSED : DownloadStatus.CANCELED) : DownloadStatus.FAILED;
                 taskDao.updateTask(getId().toString(), status, lastProgress);
-                updateNotification(context, filename == null ? fileURL : filename, status, -1, null, true);
+                updateNotification(context, null, filename == null ? fileURL : filename, status, -1, null, true);
                 log(isStopped() ? "Download canceled" : "Server replied HTTP code: " + responseCode);
             }
         } catch (IOException e) {
             taskDao.updateTask(getId().toString(), DownloadStatus.FAILED, lastProgress);
-            updateNotification(context, filename == null ? fileURL : filename, DownloadStatus.FAILED, -1, null, true);
+            updateNotification(context, null, filename == null ? fileURL : filename, DownloadStatus.FAILED, -1, null, true);
             e.printStackTrace();
         } finally {
             if (outputStream != null) {
@@ -608,18 +616,32 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
         }
     }
 
-    private void updateNotification(Context context, String title, int status, int progress, PendingIntent intent, boolean finalize) {
+    private void updateNotification(Context context, String taskId, String title, int status, int progress, PendingIntent intent, boolean finalize) {
         sendUpdateProcessEvent(status, progress);
 
         // Show the notification
         if (showNotification) {
-            // Create the notification
             NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID).
                     setContentTitle(title)
                     .setContentIntent(intent)
                     .setOnlyAlertOnce(true)
                     .setAutoCancel(true)
                     .setPriority(NotificationCompat.PRIORITY_LOW);
+
+            if (taskId != null) {
+                final Spannable actionTitleSpannable = new SpannableString("انصراف");
+
+                Intent actionIntent = new Intent(context, CancelBroadcastReceiver.class);
+                actionIntent.setAction("cancel_download");
+                actionIntent.putExtra("task_id", taskId);
+                final PendingIntent actionPendingIntent = PendingIntent.getBroadcast(context,
+                        (int) System.currentTimeMillis(), actionIntent, PendingIntent.FLAG_IMMUTABLE);
+
+                NotificationCompat.Action action = new NotificationCompat.Action.Builder(null,
+                        actionTitleSpannable, actionPendingIntent).build();
+
+                builder.addAction(action);
+            }
 
             if (status == DownloadStatus.RUNNING) {
                 if (progress <= 0) {

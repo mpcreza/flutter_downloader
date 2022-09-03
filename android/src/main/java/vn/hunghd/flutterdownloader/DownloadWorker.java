@@ -109,7 +109,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
     private boolean ignoreSsl;
     private int lastProgress = 0;
     private int primaryId;
-    private String msgStarted, msgInProgress, msgCanceled, msgFailed, msgPaused, msgComplete;
+    private String msgStarted, msgInProgress, strCancel, msgCanceled, msgFailed, msgPaused, msgComplete;
     private long lastCallUpdateNotification = 0;
     private int step;
     private boolean saveInPublicStorage;
@@ -149,7 +149,6 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
 
     @Override
     public void onMethodCall(MethodCall call, @NonNull MethodChannel.Result result) {
-        Log.e(">>>>> onMethodCall", call.method);
         if (call.method.equals("didInitializeDispatcher")) {
             synchronized (isolateStarted) {
                 while (!isolateQueue.isEmpty()) {
@@ -165,7 +164,6 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
 
     @Override
     public void onStopped() {
-        Log.e(">>>>> onStopped", "onStopped");
         Context context = getApplicationContext();
         dbHelper = TaskDbHelper.getInstance(context);
         taskDao = new TaskDao(dbHelper);
@@ -183,7 +181,6 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
     @NonNull
     @Override
     public Result doWork() {
-        Log.e(">>>>> doWork", "doWork");
         Context context = getApplicationContext();
         dbHelper = TaskDbHelper.getInstance(context);
         taskDao = new TaskDao(dbHelper);
@@ -200,6 +197,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
         Resources res = getApplicationContext().getResources();
         msgStarted = res.getString(R.string.flutter_downloader_notification_started);
         msgInProgress = res.getString(R.string.flutter_downloader_notification_in_progress);
+        strCancel = res.getString(R.string.flutter_downloader_notification_cancel);
         msgCanceled = res.getString(R.string.flutter_downloader_notification_canceled);
         msgFailed = res.getString(R.string.flutter_downloader_notification_failed);
         msgPaused = res.getString(R.string.flutter_downloader_notification_paused);
@@ -629,7 +627,7 @@ public class DownloadWorker extends Worker implements MethodChannel.MethodCallHa
                     .setPriority(NotificationCompat.PRIORITY_LOW);
 
             if (taskId != null) {
-                final Spannable actionTitleSpannable = new SpannableString("انصراف");
+                final Spannable actionTitleSpannable = new SpannableString(strCancel);
 
                 Intent actionIntent = new Intent(context, CancelBroadcastReceiver.class);
                 actionIntent.setAction("cancel_download");

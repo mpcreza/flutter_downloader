@@ -46,6 +46,11 @@
 
 @end
 
+@interface GeneratedPluginRegistrant : NSObject
++ (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry;
+@end
+
+
 @implementation FlutterDownloaderPlugin
 
 static FlutterPluginRegistrantCallback registerPlugins = nil;
@@ -59,6 +64,19 @@ static NSMutableDictionary<NSString*, NSMutableDictionary*> *_runningTaskById = 
 
 
 @synthesize databaseQueue;
+
+static NSString* _isolatePluginRegistrantClassName;
++ (NSString*)isolatePluginRegistrantClassName { return _isolatePluginRegistrantClassName; }
++ (void)setIsolatePluginRegistrantClassName:(NSString*)value { _isolatePluginRegistrantClassName = value; }
+
++ (nullable Class)lookupGeneratedPluginRegistrant {
+    NSString* classNameToCompare = @"GeneratedPluginRegistrant";
+    if (_isolatePluginRegistrantClassName != nil) {
+        classNameToCompare = _isolatePluginRegistrantClassName;
+    }
+
+    return NSClassFromString(classNameToCompare);
+}
 
 - (instancetype)init:(NSObject<FlutterPluginRegistrar> *)registrar;
 {
@@ -147,8 +165,14 @@ static NSMutableDictionary<NSString*, NSMutableDictionary*> *_runningTaskById = 
     // with the runner in order for them to work on the background isolate. `registerPlugins` is
     // a callback set from AppDelegate.m in the main application. This callback should register
     // all relevant plugins (excluding those which require UI).
-    registerPlugins(_headlessRunner);
+    // registerPlugins(_headlessRunner);
     [_registrar addMethodCallDelegate:self channel:_callbackChannel];
+
+    @try {
+        [[FlutterDownloaderPlugin lookupGeneratedPluginRegistrant] registerWithRegistry:_headlessRunner];
+    }
+    @catch(id anException) {
+    }
 }
 
 - (FlutterMethodChannel *)channel {
